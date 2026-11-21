@@ -42,7 +42,7 @@ Two **actual classmates** must each propose code edits in a separate pull reques
 ## Submission status
 
 - Arduino sketch and README prepared.
-- Tinkercad circuit/link and actual simulation evidence: **to be completed**.
+- Tinkercad circuit/link and actual simulation evidence: https://www.tinkercad.com/things/l3Ska7caBnv/editel?returnTo=%2Fdashboard&sharecode=OIwwjcHWe0a9nmf_j0GfsUJ_hnDedw9o-PeQjFYcYCw
 - Classmate invitations, two proposed revisions, and merges: **to be completed**.
 
 **Repository:** https://github.com/jnwajei22/2026FA-ENGR-2304-3-NWAJEI-JUSTIN
