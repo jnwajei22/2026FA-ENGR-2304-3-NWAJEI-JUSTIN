@@ -16,8 +16,6 @@
  * Examples: 1010000 = 80 PSI; 0x50 = 80 PSI; 101010 = 42 PSI.
  */
 
-#include <Arduino.h>
-
 const byte PRESSURE_PIN = A0;
 const byte COMPRESSOR_LED = 8;
 const byte LAUNCH_LED = 9;
@@ -42,6 +40,7 @@ unsigned long completeStartMs = 0;
 char serialBuffer[24] = {0};
 byte serialLength = 0;
 bool inputOverflow = false;
+unsigned long lastSerialByteMs = 0;
 
 int readPressurePsi() {
   return (int)((long)analogRead(PRESSURE_PIN) * MAX_PRESSURE_PSI / 1023L);
@@ -53,8 +52,8 @@ void outputsOff() {
 }
 
 void promptForTarget() {
-  Serial.println(F("Enter target 10-100 PSI in BINARY (e.g. 1010000 = 80)"));
-  Serial.println(F("or hexadecimal with 0x prefix (e.g. 0x50 = 80)."));
+  Serial.println("Enter target 10-100 PSI in BINARY (e.g. 1010000 = 80)");
+  Serial.println("or hexadecimal with 0x prefix (e.g. 0x50 = 80).");
 }
 
 // Read a positive target: binary by default; hex only with a 0x prefix.
@@ -90,12 +89,12 @@ bool parsePressure(const char* token, int* valueOut) {
   return true;
 }
 
-void abortRun(const __FlashStringHelper* reason) {
+void abortRun(const char* reason) {
   outputsOff();
   state = ABORTED;
-  Serial.print(F("ABORTED: "));
+  Serial.print("ABORTED: ");
   Serial.println(reason);
-  Serial.println(F("Release ABORT, then enter a new target to restart."));
+  Serial.println("Release ABORT, then enter a new target to restart.");
 }
 
 void startFill(int target) {
@@ -105,9 +104,9 @@ void startFill(int target) {
   digitalWrite(LAUNCH_LED, LOW);
   digitalWrite(COMPRESSOR_LED, HIGH);
   state = FILLING;
-  Serial.print(F("Target accepted: "));
+  Serial.print("Target accepted: ");
   Serial.print(targetPsi);
-  Serial.println(F(" PSI; compressor LED ON."));
+  Serial.println(" PSI; compressor LED ON.");
 }
 
 void startCountdown() {
@@ -115,26 +114,26 @@ void startCountdown() {
   state = COUNTING_DOWN;
   secondsRemaining = 10;
   lastCountMs = millis();
-  Serial.println(F("Target reached; compressor LED OFF."));
-  Serial.println(F("Simulated countdown: 10"));
+  Serial.println("Target reached; compressor LED OFF.");
+  Serial.println("Simulated countdown: 10");
 }
 
 void processSerialLine() {
   serialBuffer[serialLength] = '\0';
   if (inputOverflow) {
-    Serial.println(F("Input too long; try again."));
+    Serial.println("Input too long; try again.");
   } else if (state == WAITING_FOR_TARGET || state == ABORTED) {
     int parsedTarget;
     if (digitalRead(ABORT_BUTTON) == LOW) {
-      Serial.println(F("Release ABORT button first."));
+      Serial.println("Release ABORT button first.");
     } else if (parsePressure(serialBuffer, &parsedTarget)) {
       startFill(parsedTarget);
     } else {
-      Serial.println(F("Invalid target. Use binary or 0x-prefixed hex; range 10-100 PSI."));
+      Serial.println("Invalid target. Use binary or 0x-prefixed hex; range 10-100 PSI.");
       promptForTarget();
     }
   } else {
-    Serial.println(F("Run active; use ABORT to reset before changing the target."));
+    Serial.println("Run active; use ABORT to reset before changing the target.");
   }
   serialLength = 0;
   inputOverflow = false;
@@ -143,6 +142,7 @@ void processSerialLine() {
 void pollSerialNonblocking() {
   while (Serial.available() > 0) {
     char c = (char)Serial.read();
+    lastSerialByteMs = millis();
     if (c == '\n' || c == '\r') {
       if (serialLength > 0 || inputOverflow) processSerialLine();
     } else if (serialLength < sizeof(serialBuffer) - 1) {
@@ -150,6 +150,12 @@ void pollSerialNonblocking() {
     } else {
       inputOverflow = true;
     }
+  }
+  // Tinkercad can send text without a newline. Treat a 250-ms pause
+  // after the last incoming character as the end of that command.
+  if ((serialLength > 0 || inputOverflow) &&
+      millis() - lastSerialByteMs >= 250UL) {
+    processSerialLine();
   }
 }
 
@@ -159,7 +165,7 @@ void setup() {
   pinMode(ABORT_BUTTON, INPUT_PULLUP);
   outputsOff();
   Serial.begin(9600);
-  Serial.println(F("ENGR 2304 P09 - Project Icarus simulation"));
+  Serial.println("ENGR 2304 P09 - Project Icarus simulation");
   promptForTarget();
 }
 
@@ -169,7 +175,7 @@ void loop() {
 
   if ((state == FILLING || state == COUNTING_DOWN || state == COMPLETE)
       && digitalRead(ABORT_BUTTON) == LOW) {
-    abortRun(F("abort button pressed"));
+    abortRun("abort button pressed");
     return;
   }
 
@@ -180,32 +186,32 @@ void loop() {
 
     case FILLING:
       if (now - fillStartMs >= FILL_TIMEOUT_MS) {
-        abortRun(F("pressure target not reached in 60 seconds"));
+        abortRun("pressure target not reached in 60 seconds");
       } else if (readPressurePsi() >= targetPsi) {
         startCountdown();
       } else if (now - lastStatusMs >= STATUS_INTERVAL_MS) {
         lastStatusMs = now;
-        Serial.print(F("Pressure: "));
+        Serial.print("Pressure: ");
         Serial.print(readPressurePsi());
-        Serial.print(F(" / "));
+        Serial.print(" / ");
         Serial.print(targetPsi);
-        Serial.println(F(" PSI; compressor LED ON"));
+        Serial.println(" PSI; compressor LED ON");
       }
       break;
 
     case COUNTING_DOWN:
       if (readPressurePsi() + PRESSURE_TOLERANCE_PSI < targetPsi) {
-        abortRun(F("pressure dropped below safe simulated threshold"));
+        abortRun("pressure dropped below safe simulated threshold");
       } else if (now - lastCountMs >= COUNTDOWN_INTERVAL_MS) {
         lastCountMs += COUNTDOWN_INTERVAL_MS;
         --secondsRemaining;
-        Serial.print(F("Countdown: "));
+        Serial.print("Countdown: ");
         Serial.println(secondsRemaining);
         if (secondsRemaining == 0) {
           digitalWrite(LAUNCH_LED, HIGH);
           completeStartMs = now;
           state = COMPLETE;
-          Serial.println(F("SIMULATED LAUNCH: indicator LED ON; no actuator attached"));
+          Serial.println("SIMULATED LAUNCH: indicator LED ON; no actuator attached");
         }
       }
       break;
@@ -214,7 +220,7 @@ void loop() {
       if (now - completeStartMs >= COMPLETE_LED_MS) {
         outputsOff();
         state = WAITING_FOR_TARGET;
-        Serial.println(F("Simulation finished."));
+        Serial.println("Simulation finished.");
         promptForTarget();
       }
       break;
